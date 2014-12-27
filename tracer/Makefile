@@ -1,2 +1,5 @@
 tracer: tracer.c
-	gcc tracer.c -o tracer
+	gcc -lelf tracer.c -o tracer
+
+clean:
+	rm -f tracer

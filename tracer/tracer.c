@@ -6,9 +6,14 @@
 #include <errno.h>
 #include <sys/user.h>
 #include <sys/types.h>
+#include <fcntl.h>
+
+#include <libelf.h>
+#include <gelf.h>
 
 void printUsage();
 void wait_for_stop(pid_t pid);
+unsigned long long get_elf_entry(const char *path);
 
 int main(int argc, char **argv, char **envp)
 {
@@ -16,6 +21,8 @@ int main(int argc, char **argv, char **envp)
         printUsage("Not enough arguments.");
         return EXIT_SUCCESS;
     }
+
+    unsigned long long entrypoint = get_elf_entry(argv[2]);
 
     pid_t pid;
     pid = fork();
@@ -70,8 +77,7 @@ int main(int argc, char **argv, char **envp)
                 perror("Error getting regs.");
             }
 
-            /* XXX get this dynamically */
-            if (regs.rip == 0x8048660) {
+            if (regs.rip == entrypoint) {
                 hit_entrypoint = 1;
             }
 
@@ -103,7 +109,57 @@ tryagain:
             /* XXX HACK: We got interrupted by a signal or something, try again. */
             goto tryagain;
         }
-        fprintf(stderr, "Failed waiting for socio9op to stop (%d).\n", errno);
+        fprintf(stderr, "Failed waiting for process to stop (%d).\n", errno);
         exit(1);
     }
+}
+
+unsigned long long get_elf_entry(const char *path)
+{
+    Elf *e;
+    Elf_Kind ek;
+    GElf_Ehdr ehdr;
+    unsigned long long entrypoint;
+
+    if (elf_version(EV_CURRENT) == EV_NONE) {
+        fprintf(stderr, "Elf library initialization failed.\n");
+        exit(1);
+    }
+
+    int fd = open(path, O_RDONLY, 0);
+    if (fd < 0) {
+        fprintf(stderr, "Couldn't open the ELF at %s.\n", path);
+        exit(1);
+    }
+
+    e = elf_begin(fd, ELF_C_READ, NULL);
+    if (e == NULL) {
+        fprintf(stderr, "elf_begin() failed.\n");
+        exit(1);
+
+    }
+
+    ek = elf_kind(e);
+
+    if (ek != ELF_K_ELF) {
+        fprintf(stderr, "Bad ELF file.\n");
+        exit(1);
+    }
+
+    if (gelf_getehdr(e, &ehdr) == NULL) {
+        fprintf(stderr, "Couldn't get the ELF header.\n");
+        exit(1);
+    }
+
+    if (gelf_getclass(e) != ELFCLASS32) {
+        fprintf(stderr, "Not a 32-bit ELF.\n");
+        exit(1);
+    }
+
+    entrypoint = ehdr.e_entry;
+
+    elf_end(e);
+    close(fd);
+
+    return entrypoint;
 }
