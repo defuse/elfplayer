@@ -81,6 +81,10 @@ end
 gen = CallGraphGenerator.new( $options[:binary] )
 functions = gen.generate
 
+# TODO Do this... but we need to know which address it was loaded at (ASLR)
+#gen2 = CallGraphGenerator.new( "/usr/lib32/libc.so.6" )
+#functions += gen2.generate
+
 input = File.open(INPUT_PATH, "r")
 
 last_was_invalid = false
