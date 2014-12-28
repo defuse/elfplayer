@@ -68,6 +68,8 @@ class CallGraphGenerator
   end
 
   def add_edges
+    # FIXME we don't need this functionality, and it's broken, so returning.
+    return
     @functions.each do |f|
       f.disassembly.each do |instr|
         
