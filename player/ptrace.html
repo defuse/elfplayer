@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ELFPlayer</title>
+    <script src="libs/modernizr.js"></script>
+    <script src="libs/jquery-1.11.2.min.js"></script>
+    <script type="text/javascript">
+
+        /* Display Parameters */
+        /* This represents all of this application's global state. */
+        var DP = {
+            time: 0,
+            vpos: 0,
+            computation: [],
+            function_names: [],
+            title: "",
+            canvas: null,
+            context: null,
+            changed: false,
+            screen_dot_width: null,
+        };
+
+        var DOT_SIZE = 5;
+        var DATA_URL = "out.json";
+
+        function DisplayRegion() {
+            this.children = [];
+            this.x = 0;
+            this.y = 0;
+            this.width = 0;
+            this.height = 0;
+            this.draw = function() {
+                this.draw_this();
+                for (var i = 0; i < this.children.length; i++) {
+                    this.children[i].draw();
+                }
+            }
+            this.draw_this = function() { 
+                /* Do nothing. */
+            }
+            this.notify = function(eve) {
+                for (var i = 0; i < this.children.length; i++) {
+                    this.children[i].notify(eve);
+                }
+            }
+        }
+
+        function setupCanvasDisplay(total_width, total_height) {
+            /* entireCanvas covers the whole canvas screen. */
+            var entireCanvas = new DisplayRegion();
+            entireCanvas.x = 0;
+            entireCanvas.y = 0;
+            entireCanvas.width = total_width;
+            entireCanvas.height = total_height;
+            entireCanvas.draw_this = function () {
+                /* Blank the canvas first. */
+                DP.context.fillStyle = "#FFFFFF";
+                DP.context.fillRect(this.x, this.y, this.width, this.height);
+            }
+
+            /* topHeader represents the 100px header on top. */
+            var topHeader = new DisplayRegion();
+            topHeader.x = 0;
+            topHeader.y = 0;
+            topHeader.width = total_width;
+            topHeader.height = 100;
+            topHeader.draw_this = function () {
+
+                /* Draw the navbar. */
+                // XXX bad math
+                var end_time = DP.computation.length - DP.screen_dot_width;
+                var progress = DP.time / end_time;
+                DP.context.fillStyle = "#DDDDDD";
+                DP.context.fillRect(this.x, this.y, this.width, this.height);
+                DP.context.fillStyle = "#FFFFFF";
+                DP.context.fillRect(this.x, this.y, Math.floor(this.width * progress), this.height);
+
+                /* Draw the title. */
+                DP.context.fillStyle = "#000000";
+                DP.context.font = '30px courier';
+                DP.context.fillText("File: " + DP.title, this.x + 10, + 40);
+            };
+            topHeader.notify = function (eve) {
+                if (eve.type == "click") {
+                    var end_time = DP.computation.length - DP.screen_dot_width;
+                    DP.time = Math.floor(end_time * eve.info.x / this.width);
+                    DP.changed = true;
+                }
+            };
+
+            /* leftHeader represents the 50px header on the left. */
+            var leftHeader = new DisplayRegion();
+            leftHeader.x = 0;
+            leftHeader.y = topHeader.height;
+            leftHeader.height = total_height - topHeader.height;
+            leftHeader.width = 50;
+            leftHeader.draw_this = function () {
+                /* XXX: Placeholder. */
+                DP.context.fillStyle = "#FFFF00";
+                DP.context.fillRect(this.x, this.y, this.width, this.height);
+            };
+
+            /* dotScreen represents the main drawing area. */
+            var dotScreen = new DisplayRegion();
+            dotScreen.x = leftHeader.width;
+            dotScreen.y = topHeader.height;
+            dotScreen.width = total_width - leftHeader.width;
+            dotScreen.height = total_height - topHeader.height;
+            DP.screen_dot_width = Math.floor(dotScreen.width / DOT_SIZE);
+            dotScreen.draw_this = function () {
+                var name_positions = [];
+                var last_f = DP.time >= 1 ? DP.computation[DP.time-1].f : -1;
+                if (DP.computation.length == 0) {
+                    return;
+                }
+                for (var i = 0; i < DP.screen_dot_width; i++) {
+                    var config = DP.computation[(DP.time + i) % DP.computation.length];
+
+                    if (config.x) {
+                        /* Invalid / unknown. Fill the column with red. */
+                        DP.context.fillStyle = "#FFCCCC";
+                        DP.context.fillRect(this.x + i * DOT_SIZE, this.y + 0, DOT_SIZE, this.height);
+                    } else {
+                        /* Fill the column. */
+                        DP.context.fillStyle = config.color;
+                        DP.context.fillRect(this.x + i * DOT_SIZE, this.y + 0, DOT_SIZE, this.height);
+
+                        /* Fill the dot. */
+                        DP.context.fillStyle = "#000000";
+                        DP.context.fillRect(this.x + i * DOT_SIZE, this.y + config.i*DOT_SIZE, DOT_SIZE, DOT_SIZE);
+
+                        if (config.f != last_f) {
+                            name_positions.push( {
+                                index: i,
+                                name: DP.function_names[config.f],
+                            });
+                            last_f = config.f;
+                        }
+                    }
+                };
+
+                DP.context.fillStyle = "#000000";
+                for (var i = 0; i < name_positions.length; i++) {
+                    var obj = name_positions[i];
+                    DP.context.save();
+                    DP.context.translate(this.x + DOT_SIZE * (obj.index + 2), this.y + this.height);
+                    DP.context.rotate(-Math.PI/2);
+                    DP.context.font = '12px courier';
+                    DP.context.fillText(obj.name, 0, 0);
+                    DP.context.restore();
+                }
+            }
+            dotScreen.notify = function(eve) {
+                if (eve.type == "mousewheel") {
+                    delta = -1 * eve.info.delta;
+                    DP.time += delta;
+                    if (DP.time < 0) {
+                        DP.time = 0;
+                    }
+
+                    // Last dot is time + DP.screen_dot_width - 1
+                    if (DP.time + DP.screen_dot_width - 1 >= DP.computation.length) {
+                        DP.time = DP.computation.length - DP.screen_dot_width;
+                    }
+                    DP.changed = true;
+                }
+            };
+
+            /* Arrange them into the right tree structure. */
+            entireCanvas.children = [topHeader, leftHeader, dotScreen];
+
+            /* Return the root of the tree, representing the entire canvas. */
+            return entireCanvas;
+        }
+
+        // --- 
+
+        window.addEventListener("load", eventWindowLoaded, false);
+
+        function eventWindowLoaded() {
+            canvasApp();
+        }
+
+        function canvasSupport() {
+            return Modernizr.canvas;
+        }
+
+        function canvasApp() {
+            if (!canvasSupport()) {
+                return;
+            }
+
+            DP.canvas = document.getElementById("canvasOne");
+            DP.context = DP.canvas.getContext("2d");
+
+            var entireCanvas = setupCanvasDisplay(DP.canvas.width, DP.canvas.height);
+
+            $.getJSON(DATA_URL, function(data) {
+                var colors = [
+                    "#FFFFFF",
+                    "#EEEEEE",
+                ];
+                var last_func = -1;
+                var last_color = 0;
+                for (var i = 0; i < data.script.length; i++) {
+                    if (data.script[i].f != last_func) {
+                        last_color = (last_color + 1) % colors.length;
+                        last_func = data.script[i].f;
+                    }
+                    data.script[i].color = colors[last_color];
+                }
+                DP.computation = data.script;
+                /* Add a bunch of invalids to signify the end. */
+                DP.function_names = data.functions;
+                DP.title = data.title;
+                for (var i = 0; i < 50; i++) {
+                    DP.computation.push({x: 1});
+                }
+                entireCanvas.draw();
+
+                $("#canvasOne").click(function(e) {
+                    var eve = {
+                        type: "click",
+                        info: {
+                            x: e.pageX - $("#canvasOne").offset().left,
+                            y: e.pageY - $("#canvasOne").offset().top
+                        }
+                    }
+                    sendEventNotifications(eve);
+                });
+                DP.canvas.addEventListener('DOMMouseScroll', handleScroll, false);
+                DP.canvas.addEventListener('mousewheel', handleScroll, false);
+            })
+                .fail(function () { alert('Error reading file.'); });
+
+            function sendEventNotifications(eve) {
+                DP.changed = false;
+                entireCanvas.notify(eve);
+                if (DP.changed) {
+                    entireCanvas.draw();
+                }
+            }
+
+
+            function handleScroll(evt) {
+                // XXX: what does this do?
+                var delta = evt.wheelDelta ? evt.wheelDelta/40 : evt.detail ? -evt.detail : 0;
+                var eve = {
+                    type: "mousewheel",
+                    info: { delta: delta },
+                }
+                sendEventNotifications(eve);
+            }
+
+        }
+
+    </script>
+</head>
+<body style="margin: 0; padding: 0; background-color: black;">
+    <canvas id="canvasOne" width="1500" height="800" style="border: solid white 1px;" >
+        Your browser does not support HTML5 canvas.
+    </canvas>
+</body>
