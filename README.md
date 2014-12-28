@@ -7,6 +7,8 @@ code is doing, crafting exploits, or side-channel analysis.
 
 **Currently, ELFPlayer is prototype quality. This is a beta release.**
 
+[ElfPlayer Screenshot](https://defuse.ca/files2/github-elfplayer-ss.png)
+
 ELFPlayer is made up of three components: The tracer, encoder, and player.
 
 Tracer
