@@ -57,3 +57,9 @@ $ firefox ./player/ptrace.html
 
 For now, it will probably only work with firefox. I haven't tested it with
 anything else.
+
+Red columns represent continuous sequences of EIP values which were not in
+regions known to the encoder. For example, if execution jumps into glibc for 100
+instructions, those 100 instructions are displayed as a single red column. Blue
+dots on the top or bottom mean there is an instruction above or below the view,
+respectively. Use the (shitty) left scrollbar to bring them into view.
