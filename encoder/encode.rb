@@ -4,6 +4,7 @@ $LOAD_PATH << File.dirname( __FILE__ )
 
 require 'optparse'
 require 'set'
+require 'json'
 
 require 'lib/Print.rb'
 require 'lib/CallGraphGenerator.rb'
@@ -31,6 +32,11 @@ optparse = OptionParser.new do |opts|
   $options[:output] = nil
   opts.on( '-o', '--output FILE', 'Output file' ) do |file|
     $options[:output] = file
+  end
+
+  $options[:title] = nil
+  opts.on( '-t', '--title TITLE', 'Title (Default: binary name)' ) do |title|
+    $options[:title] = title
   end
 end
 
@@ -68,13 +74,21 @@ if $options[:output].nil?
   exit 1
 end
 
+if $options[:title].nil?
+  $options[:title] = File.basename(INPUT_PATH)
+end
+
 gen = CallGraphGenerator.new( $options[:binary] )
 functions = gen.generate
 
 input = File.open(INPUT_PATH, "r")
-output = File.open($options[:output], "w")
 
 last_was_invalid = false
+
+output_structure = {
+  "title" => $options[:title],
+  "script" => []
+}
 
 input.each_line do |line|
   address = line.to_i(16)
@@ -90,7 +104,9 @@ input.each_line do |line|
   in_func_instr_num = nil
   if in_func.nil?
     unless last_was_invalid
-      output.write("\xFF\xFF\xFF\xFF\x00\x00\x00\x00")
+      output_structure["script"] << {
+        "x" => 1,
+      }
       last_was_invalid = true
     end
   else
@@ -109,12 +125,17 @@ input.each_line do |line|
       exit 1
     end
 
-    output.write(
-      [functions.find_index(in_func), in_func_instr_num].pack("L<L<")
-    )
+    output_structure["script"] << {
+      "f" => functions.find_index(in_func),
+      "i" => in_func_instr_num,
+    }
   end
-
 end
 
 input.close
-output.close
+
+output_structure["functions"] = functions.map { |f| f.name }
+
+File.open($options[:output], "w") do |output|
+  JSON.dump(output_structure, output)
+end
