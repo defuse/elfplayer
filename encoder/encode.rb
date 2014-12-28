@@ -75,7 +75,7 @@ if $options[:output].nil?
 end
 
 if $options[:title].nil?
-  $options[:title] = File.basename(INPUT_PATH)
+  $options[:title] = File.basename($options[:binary])
 end
 
 gen = CallGraphGenerator.new( $options[:binary] )
