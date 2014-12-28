@@ -12,6 +12,7 @@
         var DP = {
             time: 0,
             vpos: 0,
+            max_vert: 0,
             computation: [],
             function_names: [],
             title: "",
@@ -19,6 +20,7 @@
             context: null,
             changed: false,
             screen_dot_width: null,
+            screen_dot_height: null,
         };
 
         var DOT_SIZE = 5;
@@ -46,6 +48,10 @@
             }
         }
 
+        function inBounds(px, py, x, y, w, h) {
+            return x <= px && px <= x+w && y <= py && py <= y + h;
+        }
+
         function setupCanvasDisplay(total_width, total_height) {
             /* entireCanvas covers the whole canvas screen. */
             var entireCanvas = new DisplayRegion();
@@ -66,8 +72,7 @@
             topHeader.width = total_width;
             topHeader.height = 100;
             topHeader.draw_this = function () {
-
-                /* Draw the navbar. */
+                /* Draw the scrollbar. */
                 // XXX bad math
                 var end_time = DP.computation.length - DP.screen_dot_width;
                 var progress = DP.time / end_time;
@@ -82,8 +87,9 @@
                 DP.context.fillText("File: " + DP.title, this.x + 10, + 40);
             };
             topHeader.notify = function (eve) {
-                if (eve.type == "click") {
+                if (eve.type == "click" && inBounds(eve.info.x, eve.info.y, this.x, this.y, this.width, this.height)) {
                     var end_time = DP.computation.length - DP.screen_dot_width;
+                    end_time = Math.max(0, end_time);
                     DP.time = Math.floor(end_time * eve.info.x / this.width);
                     DP.changed = true;
                 }
@@ -96,18 +102,68 @@
             leftHeader.height = total_height - topHeader.height;
             leftHeader.width = 50;
             leftHeader.draw_this = function () {
-                /* XXX: Placeholder. */
-                DP.context.fillStyle = "#FFFF00";
+                /* Draw the vertical scrollbar. */
+                DP.context.fillStyle = "#DDDDDD";
                 DP.context.fillRect(this.x, this.y, this.width, this.height);
+                var progress = (DP.vpos + DP.screen_dot_height) / (DP.max_vert + 1);
+                progress = Math.min(1.0, progress);
+                DP.context.fillStyle = "#CCFFCC";
+                DP.context.fillRect(this.x, this.y, this.width, Math.floor(this.height * progress));
             };
+            leftHeader.notify = function (eve) {
+                if (eve.type == "click" && inBounds(eve.info.x, eve.info.y, this.x, this.y, this.width, this.height)) {
+                    var end_vpos = DP.max_vert - DP.screen_dot_height;
+                    end_vpos = Math.max(0, end_vpos);
+                    DP.vpos = Math.floor(end_vpos * (eve.info.y - this.y) / this.height);
+                    DP.changed = true;
+                }
+            };
+
+            /* topOverflow represents the top overflow area. */
+            var topOverflow = new DisplayRegion();
+            topOverflow.x = leftHeader.width;
+            topOverflow.y = topHeader.height;
+            topOverflow.width = total_width - leftHeader.width;
+            topOverflow.height = DOT_SIZE;
+            topOverflow.draw_this = function () {
+                for (var i = 0; i < DP.screen_dot_width; i++) {
+                    var config = DP.computation[(DP.time + i) % DP.computation.length];
+                    if (!config.x) {
+                        if (config.i < DP.vpos) {
+                            /* Set the top overflow indicator. */
+                            DP.context.fillStyle = "#0000FF";
+                            DP.context.fillRect(this.x + i*DOT_SIZE, this.y, DOT_SIZE, DOT_SIZE);
+                        }
+                    }
+                }
+            }
+            var bottomOverflow = new DisplayRegion();
+            bottomOverflow.x = leftHeader.width;
+            bottomOverflow.y = total_height - DOT_SIZE;
+            bottomOverflow.width = total_width - leftHeader.width;
+            bottomOverflow.height = DOT_SIZE;
+            bottomOverflow.draw_this = function () {
+                for (var i = 0; i < DP.screen_dot_width; i++) {
+                    var config = DP.computation[(DP.time + i) % DP.computation.length];
+                    if (!config.x) {
+                        if (config.i >= DP.vpos + DP.screen_dot_height) {
+                            /* Set the bottom overflow indicator. */
+                            DP.context.fillStyle = "#0000FF";
+                            DP.context.fillRect(this.x + i*DOT_SIZE, this.y, DOT_SIZE, DOT_SIZE);
+                        }
+                    }
+                }
+            }
 
             /* dotScreen represents the main drawing area. */
             var dotScreen = new DisplayRegion();
             dotScreen.x = leftHeader.width;
-            dotScreen.y = topHeader.height;
+            dotScreen.y = topHeader.height + DOT_SIZE;
             dotScreen.width = total_width - leftHeader.width;
-            dotScreen.height = total_height - topHeader.height;
+            /* Leave room for overflow indicators. */
+            dotScreen.height = total_height - topHeader.height - 2*DOT_SIZE;
             DP.screen_dot_width = Math.floor(dotScreen.width / DOT_SIZE);
+            DP.screen_dot_height = Math.floor(dotScreen.height / DOT_SIZE);
             dotScreen.draw_this = function () {
                 var name_positions = [];
                 var last_f = DP.time >= 1 ? DP.computation[DP.time-1].f : -1;
@@ -127,8 +183,12 @@
                         DP.context.fillRect(this.x + i * DOT_SIZE, this.y + 0, DOT_SIZE, this.height);
 
                         /* Fill the dot. */
-                        DP.context.fillStyle = "#000000";
-                        DP.context.fillRect(this.x + i * DOT_SIZE, this.y + config.i*DOT_SIZE, DOT_SIZE, DOT_SIZE);
+                        var draw_i = config.i - DP.vpos;
+                        /* If not, the overflows will indicate it. */
+                        if (draw_i >= 0 && draw_i < DP.screen_dot_height) {
+                            DP.context.fillStyle = "#000000";
+                            DP.context.fillRect(this.x + i * DOT_SIZE, this.y + draw_i*DOT_SIZE, DOT_SIZE, DOT_SIZE);
+                        }
 
                         if (config.f != last_f) {
                             name_positions.push( {
@@ -168,7 +228,7 @@
             };
 
             /* Arrange them into the right tree structure. */
-            entireCanvas.children = [topHeader, leftHeader, dotScreen];
+            entireCanvas.children = [topHeader, leftHeader, topOverflow, dotScreen, bottomOverflow];
 
             /* Return the root of the tree, representing the entire canvas. */
             return entireCanvas;
@@ -203,7 +263,10 @@
                 ];
                 var last_func = -1;
                 var last_color = 0;
+                DP.max_vert = 1;
                 for (var i = 0; i < data.script.length; i++) {
+                    if (data.script[i].x) { continue; }
+                    DP.max_vert = Math.max(DP.max_vert, data.script[i].i);
                     if (data.script[i].f != last_func) {
                         last_color = (last_color + 1) % colors.length;
                         last_func = data.script[i].f;
